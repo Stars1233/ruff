@@ -73,6 +73,15 @@ enum SystemOrVendoredPathRef<'a> {
     Vendored(&'a VendoredPath),
 }
 
+impl std::fmt::Display for SystemOrVendoredPathRef<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SystemOrVendoredPathRef::System(system) => system.fmt(f),
+            SystemOrVendoredPathRef::Vendored(vendored) => vendored.fmt(f),
+        }
+    }
+}
+
 /// Resolves the module for the file with the given id.
 ///
 /// Returns `None` if the file is not a module locatable via any of the known search paths.
@@ -712,8 +721,8 @@ mod tests {
     use crate::module_name::ModuleName;
     use crate::module_resolver::module::ModuleKind;
     use crate::module_resolver::testing::{FileSpec, MockedTypeshed, TestCase, TestCaseBuilder};
-    use crate::ProgramSettings;
     use crate::PythonVersion;
+    use crate::{ProgramSettings, PythonPlatform};
 
     use super::*;
 
@@ -1253,7 +1262,7 @@ mod tests {
     fn symlink() -> anyhow::Result<()> {
         use anyhow::Context;
 
-        use crate::program::Program;
+        use crate::{program::Program, PythonPlatform};
         use ruff_db::system::{OsSystem, SystemPath};
 
         use crate::db::tests::TestDb;
@@ -1287,6 +1296,7 @@ mod tests {
             &db,
             &ProgramSettings {
                 python_version: PythonVersion::PY38,
+                python_platform: PythonPlatform::default(),
                 search_paths: SearchPathSettings {
                     extra_paths: vec![],
                     src_root: src.clone(),
@@ -1792,6 +1802,7 @@ not_a_directory
             &db,
             &ProgramSettings {
                 python_version: PythonVersion::default(),
+                python_platform: PythonPlatform::default(),
                 search_paths: SearchPathSettings {
                     extra_paths: vec![],
                     src_root: SystemPathBuf::from("/src"),

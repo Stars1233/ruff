@@ -10,7 +10,7 @@ use libfuzzer_sys::{fuzz_target, Corpus};
 use red_knot_python_semantic::types::check_types;
 use red_knot_python_semantic::{
     default_lint_registry, lint::RuleSelection, Db as SemanticDb, Program, ProgramSettings,
-    PythonVersion, SearchPathSettings,
+    PythonPlatform, PythonVersion, SearchPathSettings,
 };
 use ruff_db::files::{system_path_to_file, File, Files};
 use ruff_db::system::{DbWithTestSystem, System, SystemPathBuf, TestSystem};
@@ -22,12 +22,13 @@ use ruff_python_parser::{parse_unchecked, Mode};
 ///
 /// Uses an in memory filesystem and it stubs out the vendored files by default.
 #[salsa::db]
+#[derive(Clone)]
 struct TestDb {
     storage: salsa::Storage<Self>,
     files: Files,
     system: TestSystem,
     vendored: VendoredFileSystem,
-    events: std::sync::Arc<std::sync::Mutex<Vec<salsa::Event>>>,
+    events: std::sync::Arc<Mutex<Vec<salsa::Event>>>,
     rule_selection: std::sync::Arc<RuleSelection>,
 }
 
@@ -111,6 +112,7 @@ fn setup_db() -> TestDb {
         &db,
         &ProgramSettings {
             python_version: PythonVersion::default(),
+            python_platform: PythonPlatform::default(),
             search_paths: SearchPathSettings::new(src_root),
         },
     )

@@ -52,6 +52,9 @@ pub fn run(path: &Utf8Path, long_title: &str, short_title: &str, test_name: &str
         Program::get(&db)
             .set_python_version(&mut db)
             .to(test.configuration().python_version().unwrap_or_default());
+        Program::get(&db)
+            .set_python_platform(&mut db)
+            .to(test.configuration().python_platform().unwrap_or_default());
 
         // Remove all files so that the db is in a "fresh" state.
         db.memory_file_system().remove_all();
@@ -97,7 +100,11 @@ fn run_test(db: &mut db::Db, test: &parser::MarkdownTest) -> Result<(), Failures
 
     let test_files: Vec<_> = test
         .files()
-        .map(|embedded| {
+        .filter_map(|embedded| {
+            if embedded.lang == "ignore" {
+                return None;
+            }
+
             assert!(
                 matches!(embedded.lang, "py" | "pyi"),
                 "Non-Python files not supported yet."
@@ -106,10 +113,10 @@ fn run_test(db: &mut db::Db, test: &parser::MarkdownTest) -> Result<(), Failures
             db.write_file(&full_path, embedded.code).unwrap();
             let file = system_path_to_file(db, full_path).unwrap();
 
-            TestFile {
+            Some(TestFile {
                 file,
                 backtick_offset: embedded.md_offset,
-            }
+            })
         })
         .collect();
 

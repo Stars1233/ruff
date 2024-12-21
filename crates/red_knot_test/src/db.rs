@@ -1,7 +1,7 @@
 use red_knot_python_semantic::lint::RuleSelection;
 use red_knot_python_semantic::{
-    default_lint_registry, Db as SemanticDb, Program, ProgramSettings, PythonVersion,
-    SearchPathSettings,
+    default_lint_registry, Db as SemanticDb, Program, ProgramSettings, PythonPlatform,
+    PythonVersion, SearchPathSettings,
 };
 use ruff_db::files::{File, Files};
 use ruff_db::system::{DbWithTestSystem, System, SystemPath, SystemPathBuf, TestSystem};
@@ -9,6 +9,7 @@ use ruff_db::vendored::VendoredFileSystem;
 use ruff_db::{Db as SourceDb, Upcast};
 
 #[salsa::db]
+#[derive(Clone)]
 pub(crate) struct Db {
     workspace_root: SystemPathBuf,
     storage: salsa::Storage<Self>,
@@ -39,6 +40,7 @@ impl Db {
             &db,
             &ProgramSettings {
                 python_version: PythonVersion::default(),
+                python_platform: PythonPlatform::default(),
                 search_paths: SearchPathSettings::new(db.workspace_root.clone()),
             },
         )

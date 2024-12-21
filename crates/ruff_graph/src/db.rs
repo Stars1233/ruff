@@ -3,7 +3,9 @@ use std::sync::Arc;
 use zip::CompressionMethod;
 
 use red_knot_python_semantic::lint::RuleSelection;
-use red_knot_python_semantic::{Db, Program, ProgramSettings, PythonVersion, SearchPathSettings};
+use red_knot_python_semantic::{
+    Db, Program, ProgramSettings, PythonPlatform, PythonVersion, SearchPathSettings,
+};
 use ruff_db::files::{File, Files};
 use ruff_db::system::{OsSystem, System, SystemPathBuf};
 use ruff_db::vendored::{VendoredFileSystem, VendoredFileSystemBuilder};
@@ -16,7 +18,7 @@ static EMPTY_VENDORED: std::sync::LazyLock<VendoredFileSystem> = std::sync::Lazy
 });
 
 #[salsa::db]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ModuleDb {
     storage: salsa::Storage<Self>,
     files: Files,
@@ -49,22 +51,12 @@ impl ModuleDb {
             &db,
             &ProgramSettings {
                 python_version,
+                python_platform: PythonPlatform::default(),
                 search_paths,
             },
         )?;
 
         Ok(db)
-    }
-
-    /// Create a snapshot of the current database.
-    #[must_use]
-    pub fn snapshot(&self) -> Self {
-        Self {
-            storage: self.storage.clone(),
-            system: self.system.clone(),
-            files: self.files.snapshot(),
-            rule_selection: Arc::clone(&self.rule_selection),
-        }
     }
 }
 

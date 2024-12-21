@@ -237,3 +237,26 @@ def f():
         print(a)
     for a in values:
         result.append(a + 1)  # PERF401
+
+def f():
+    values = [1, 2, 3]
+    def g():
+        for a in values:
+            result.append(a + 1)  # PERF401
+    result = []
+
+def f():
+    values = [1, 2, 3]
+    result = []
+    for i in values:
+        result.append(i + 1)  # Ok
+    del i
+
+# The fix here must parenthesize the walrus operator
+# https://github.com/astral-sh/ruff/issues/15047
+def f():
+    items = []
+
+    for i in range(5):
+        if j := i:
+            items.append(j)
