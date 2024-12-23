@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::workspace::{check_file, Workspace, WorkspaceMetadata};
 use crate::DEFAULT_LINT_REGISTRY;
-use red_knot_python_semantic::lint::RuleSelection;
+use red_knot_python_semantic::lint::{LintRegistry, RuleSelection};
 use red_knot_python_semantic::{Db as SemanticDb, Program};
 use ruff_db::diagnostic::Diagnostic;
 use ruff_db::files::{File, Files};
@@ -21,6 +21,7 @@ pub trait Db: SemanticDb + Upcast<dyn SemanticDb> {
 }
 
 #[salsa::db]
+#[derive(Clone)]
 pub struct RootDatabase {
     workspace: Option<Workspace>,
     storage: salsa::Storage<RootDatabase>,
@@ -80,17 +81,6 @@ impl RootDatabase {
     {
         Cancelled::catch(|| f(self))
     }
-
-    #[must_use]
-    pub fn snapshot(&self) -> Self {
-        Self {
-            workspace: self.workspace,
-            storage: self.storage.clone(),
-            files: self.files.snapshot(),
-            system: Arc::clone(&self.system),
-            rule_selection: Arc::clone(&self.rule_selection),
-        }
-    }
 }
 
 impl Upcast<dyn SemanticDb> for RootDatabase {
@@ -125,6 +115,10 @@ impl SemanticDb for RootDatabase {
 
     fn rule_selection(&self) -> &RuleSelection {
         &self.rule_selection
+    }
+
+    fn lint_registry(&self) -> &LintRegistry {
+        &DEFAULT_LINT_REGISTRY
     }
 }
 
@@ -172,7 +166,7 @@ pub(crate) mod tests {
 
     use salsa::Event;
 
-    use red_knot_python_semantic::lint::RuleSelection;
+    use red_knot_python_semantic::lint::{LintRegistry, RuleSelection};
     use red_knot_python_semantic::Db as SemanticDb;
     use ruff_db::files::Files;
     use ruff_db::system::{DbWithTestSystem, System, TestSystem};
@@ -184,6 +178,7 @@ pub(crate) mod tests {
     use crate::DEFAULT_LINT_REGISTRY;
 
     #[salsa::db]
+    #[derive(Clone)]
     pub(crate) struct TestDb {
         storage: salsa::Storage<Self>,
         events: Arc<std::sync::Mutex<Vec<Event>>>,
@@ -276,6 +271,10 @@ pub(crate) mod tests {
 
         fn rule_selection(&self) -> &RuleSelection {
             &self.rule_selection
+        }
+
+        fn lint_registry(&self) -> &LintRegistry {
+            &DEFAULT_LINT_REGISTRY
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::lint::RuleSelection;
+use crate::lint::{LintRegistry, RuleSelection};
 use ruff_db::files::File;
 use ruff_db::{Db as SourceDb, Upcast};
 
@@ -8,6 +8,8 @@ pub trait Db: SourceDb + Upcast<dyn SourceDb> {
     fn is_file_open(&self, file: File) -> bool;
 
     fn rule_selection(&self) -> &RuleSelection;
+
+    fn lint_registry(&self) -> &LintRegistry;
 }
 
 #[cfg(test)]
@@ -16,10 +18,10 @@ pub(crate) mod tests {
 
     use crate::program::{Program, SearchPathSettings};
     use crate::python_version::PythonVersion;
-    use crate::{default_lint_registry, ProgramSettings};
+    use crate::{default_lint_registry, ProgramSettings, PythonPlatform};
 
     use super::Db;
-    use crate::lint::RuleSelection;
+    use crate::lint::{LintRegistry, RuleSelection};
     use anyhow::Context;
     use ruff_db::files::{File, Files};
     use ruff_db::system::{DbWithTestSystem, System, SystemPathBuf, TestSystem};
@@ -27,6 +29,7 @@ pub(crate) mod tests {
     use ruff_db::{Db as SourceDb, Upcast};
 
     #[salsa::db]
+    #[derive(Clone)]
     pub(crate) struct TestDb {
         storage: salsa::Storage<Self>,
         files: Files,
@@ -44,7 +47,7 @@ pub(crate) mod tests {
                 vendored: red_knot_vendored::file_system().clone(),
                 events: Arc::default(),
                 files: Files::default(),
-                rule_selection: Arc::new(RuleSelection::from_registry(&default_lint_registry())),
+                rule_selection: Arc::new(RuleSelection::from_registry(default_lint_registry())),
             }
         }
 
@@ -111,6 +114,10 @@ pub(crate) mod tests {
         fn rule_selection(&self) -> &RuleSelection {
             &self.rule_selection
         }
+
+        fn lint_registry(&self) -> &LintRegistry {
+            default_lint_registry()
+        }
     }
 
     #[salsa::db]
@@ -126,6 +133,8 @@ pub(crate) mod tests {
     pub(crate) struct TestDbBuilder<'a> {
         /// Target Python version
         python_version: PythonVersion,
+        /// Target Python platform
+        python_platform: PythonPlatform,
         /// Path to a custom typeshed directory
         custom_typeshed: Option<SystemPathBuf>,
         /// Path and content pairs for files that should be present
@@ -136,6 +145,7 @@ pub(crate) mod tests {
         pub(crate) fn new() -> Self {
             Self {
                 python_version: PythonVersion::default(),
+                python_platform: PythonPlatform::default(),
                 custom_typeshed: None,
                 files: vec![],
             }
@@ -172,6 +182,7 @@ pub(crate) mod tests {
                 &db,
                 &ProgramSettings {
                     python_version: self.python_version,
+                    python_platform: self.python_platform,
                     search_paths,
                 },
             )
