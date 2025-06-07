@@ -9,7 +9,7 @@ use crate::types::class_base::ClassBase;
 use crate::types::instance::{NominalInstanceType, Protocol, ProtocolInstanceType};
 use crate::types::signatures::{Parameter, Parameters, Signature};
 use crate::types::{
-    KnownInstanceType, Type, TypeMapping, TypeVarBoundOrConstraints, TypeVarInstance,
+    KnownInstanceType, Type, TypeMapping, TypeRelation, TypeVarBoundOrConstraints, TypeVarInstance,
     TypeVarVariance, UnionType, declaration_type, todo_type,
 };
 use crate::{Db, FxOrderSet};
@@ -27,7 +27,6 @@ use crate::{Db, FxOrderSet};
 pub struct GenericContext<'db> {
     #[returns(ref)]
     pub(crate) variables: FxOrderSet<TypeVarInstance<'db>>,
-    pub(crate) origin: GenericContextOrigin,
 }
 
 impl<'db> GenericContext<'db> {
@@ -41,7 +40,7 @@ impl<'db> GenericContext<'db> {
             .iter()
             .filter_map(|type_param| Self::variable_from_type_param(db, index, type_param))
             .collect();
-        Self::new(db, variables, GenericContextOrigin::TypeParameterList)
+        Self::new(db, variables)
     }
 
     fn variable_from_type_param(
@@ -87,11 +86,7 @@ impl<'db> GenericContext<'db> {
         if variables.is_empty() {
             return None;
         }
-        Some(Self::new(
-            db,
-            variables,
-            GenericContextOrigin::LegacyGenericFunction,
-        ))
+        Some(Self::new(db, variables))
     }
 
     /// Creates a generic context from the legacy `TypeVar`s that appear in class's base class
@@ -107,7 +102,7 @@ impl<'db> GenericContext<'db> {
         if variables.is_empty() {
             return None;
         }
-        Some(Self::new(db, variables, GenericContextOrigin::Inherited))
+        Some(Self::new(db, variables))
     }
 
     pub(crate) fn len(self, db: &'db dyn Db) -> usize {
@@ -244,46 +239,21 @@ impl<'db> GenericContext<'db> {
             .iter()
             .map(|ty| ty.normalized(db))
             .collect();
-        Self::new(db, variables, self.origin(db))
+        Self::new(db, variables)
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum GenericContextOrigin {
-    LegacyBase(LegacyGenericBase),
-    Inherited,
-    LegacyGenericFunction,
-    TypeParameterList,
-}
-
-impl GenericContextOrigin {
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::LegacyBase(base) => base.as_str(),
-            Self::Inherited => "inherited",
-            Self::LegacyGenericFunction => "legacy generic function",
-            Self::TypeParameterList => "type parameter list",
-        }
-    }
-}
-
-impl std::fmt::Display for GenericContextOrigin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum LegacyGenericBase {
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum LegacyGenericBase {
     Generic,
     Protocol,
 }
 
 impl LegacyGenericBase {
-    pub(crate) const fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
-            Self::Generic => "`typing.Generic`",
-            Self::Protocol => "subscripted `typing.Protocol`",
+            Self::Generic => "Generic",
+            Self::Protocol => "Protocol",
         }
     }
 }
@@ -291,12 +261,6 @@ impl LegacyGenericBase {
 impl std::fmt::Display for LegacyGenericBase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl From<LegacyGenericBase> for GenericContextOrigin {
-    fn from(base: LegacyGenericBase) -> Self {
-        Self::LegacyBase(base)
     }
 }
 
@@ -394,7 +358,12 @@ impl<'db> Specialization<'db> {
         Self::new(db, self.generic_context(db), types)
     }
 
-    pub(crate) fn is_subtype_of(self, db: &'db dyn Db, other: Specialization<'db>) -> bool {
+    pub(crate) fn has_relation_to(
+        self,
+        db: &'db dyn Db,
+        other: Self,
+        relation: TypeRelation,
+    ) -> bool {
         let generic_context = self.generic_context(db);
         if generic_context != other.generic_context(db) {
             return false;
@@ -404,20 +373,31 @@ impl<'db> Specialization<'db> {
             .zip(self.types(db))
             .zip(other.types(db))
         {
-            if matches!(self_type, Type::Dynamic(_)) || matches!(other_type, Type::Dynamic(_)) {
-                return false;
+            if self_type.is_dynamic() || other_type.is_dynamic() {
+                match relation {
+                    TypeRelation::Assignability => continue,
+                    TypeRelation::Subtyping => return false,
+                }
             }
 
-            // Subtyping of each type in the specialization depends on the variance of the
-            // corresponding typevar:
+            // Subtyping/assignability of each type in the specialization depends on the variance
+            // of the corresponding typevar:
             //   - covariant: verify that self_type <: other_type
             //   - contravariant: verify that other_type <: self_type
-            //   - invariant: verify that self_type == other_type
-            //   - bivariant: skip, can't make subtyping false
+            //   - invariant: verify that self_type <: other_type AND other_type <: self_type
+            //   - bivariant: skip, can't make subtyping/assignability false
             let compatible = match typevar.variance(db) {
-                TypeVarVariance::Invariant => self_type.is_equivalent_to(db, *other_type),
-                TypeVarVariance::Covariant => self_type.is_subtype_of(db, *other_type),
-                TypeVarVariance::Contravariant => other_type.is_subtype_of(db, *self_type),
+                TypeVarVariance::Invariant => match relation {
+                    TypeRelation::Subtyping => self_type.is_equivalent_to(db, *other_type),
+                    TypeRelation::Assignability => {
+                        self_type.is_assignable_to(db, *other_type)
+                            && other_type.is_assignable_to(db, *self_type)
+                    }
+                },
+                TypeVarVariance::Covariant => self_type.has_relation_to(db, *other_type, relation),
+                TypeVarVariance::Contravariant => {
+                    other_type.has_relation_to(db, *self_type, relation)
+                }
                 TypeVarVariance::Bivariant => true,
             };
             if !compatible {
@@ -452,43 +432,6 @@ impl<'db> Specialization<'db> {
                 TypeVarVariance::Invariant
                 | TypeVarVariance::Covariant
                 | TypeVarVariance::Contravariant => self_type.is_equivalent_to(db, *other_type),
-                TypeVarVariance::Bivariant => true,
-            };
-            if !compatible {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    pub(crate) fn is_assignable_to(self, db: &'db dyn Db, other: Specialization<'db>) -> bool {
-        let generic_context = self.generic_context(db);
-        if generic_context != other.generic_context(db) {
-            return false;
-        }
-
-        for ((typevar, self_type), other_type) in (generic_context.variables(db).into_iter())
-            .zip(self.types(db))
-            .zip(other.types(db))
-        {
-            if matches!(self_type, Type::Dynamic(_)) || matches!(other_type, Type::Dynamic(_)) {
-                continue;
-            }
-
-            // Assignability of each type in the specialization depends on the variance of the
-            // corresponding typevar:
-            //   - covariant: verify that self_type <: other_type
-            //   - contravariant: verify that other_type <: self_type
-            //   - invariant: verify that self_type <: other_type AND other_type <: self_type
-            //   - bivariant: skip, can't make assignability false
-            let compatible = match typevar.variance(db) {
-                TypeVarVariance::Invariant => {
-                    self_type.is_assignable_to(db, *other_type)
-                        && other_type.is_assignable_to(db, *self_type)
-                }
-                TypeVarVariance::Covariant => self_type.is_assignable_to(db, *other_type),
-                TypeVarVariance::Contravariant => other_type.is_assignable_to(db, *self_type),
                 TypeVarVariance::Bivariant => true,
             };
             if !compatible {

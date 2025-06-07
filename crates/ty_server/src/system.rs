@@ -47,10 +47,19 @@ pub(crate) fn file_to_url(db: &dyn Db, file: File) -> Option<Url> {
 }
 
 /// Represents either a [`SystemPath`] or a [`SystemVirtualPath`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum AnySystemPath {
     System(SystemPathBuf),
     SystemVirtual(SystemVirtualPathBuf),
+}
+
+impl AnySystemPath {
+    pub(crate) const fn as_system(&self) -> Option<&SystemPathBuf> {
+        match self {
+            AnySystemPath::System(system_path_buf) => Some(system_path_buf),
+            AnySystemPath::SystemVirtual(_) => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -237,6 +246,10 @@ impl System for LSPSystem {
 
     fn case_sensitivity(&self) -> CaseSensitivity {
         self.os_system.case_sensitivity()
+    }
+
+    fn env_var(&self, name: &str) -> std::result::Result<String, std::env::VarError> {
+        self.os_system.env_var(name)
     }
 }
 
