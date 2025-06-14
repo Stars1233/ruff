@@ -1,4 +1,3 @@
-use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
 use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::any_over_expr;
 use ruff_python_ast::name::Name;
@@ -13,6 +12,7 @@ use ruff_text_size::{Ranged, TextRange};
 use crate::checkers::ast::Checker;
 use crate::fix::edits::fits;
 use crate::line_width::LineWidthBuilder;
+use crate::{Edit, Fix, FixAvailability, Violation};
 
 /// ## What it does
 /// Checks for `for` loops that can be replaced with a builtin function, like
@@ -111,7 +111,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                 return;
             }
 
-            let mut diagnostic = Diagnostic::new(
+            let mut diagnostic = checker.report_diagnostic(
                 ReimplementedBuiltin {
                     replacement: contents.to_string(),
                 },
@@ -124,7 +124,6 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                     terminal.stmt.end(),
                 )));
             }
-            checker.report_diagnostic(diagnostic);
         }
         // Replace with `all`.
         (false, true) => {
@@ -134,6 +133,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                     op: UnaryOp::Not,
                     operand,
                     range: _,
+                    node_index: _,
                 }) = &loop_.test
                 {
                     *operand.clone()
@@ -142,6 +142,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                     ops,
                     comparators,
                     range: _,
+                    node_index: _,
                 }) = &loop_.test
                 {
                     if let ([op], [comparator]) = (&**ops, &**comparators) {
@@ -162,6 +163,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                             ops: Box::from([op]),
                             comparators: Box::from([comparator.clone()]),
                             range: TextRange::default(),
+                            node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
                         };
                         node.into()
                     } else {
@@ -169,6 +171,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                             op: UnaryOp::Not,
                             operand: Box::new(loop_.test.clone()),
                             range: TextRange::default(),
+                            node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
                         };
                         node.into()
                     }
@@ -177,6 +180,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                         op: UnaryOp::Not,
                         operand: Box::new(loop_.test.clone()),
                         range: TextRange::default(),
+                        node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
                     };
                     node.into()
                 }
@@ -203,7 +207,7 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                 return;
             }
 
-            let mut diagnostic = Diagnostic::new(
+            let mut diagnostic = checker.report_diagnostic(
                 ReimplementedBuiltin {
                     replacement: contents.to_string(),
                 },
@@ -216,7 +220,6 @@ pub(crate) fn convert_for_loop_to_any_all(checker: &Checker, stmt: &Stmt) {
                     terminal.stmt.end(),
                 )));
             }
-            checker.report_diagnostic(diagnostic);
         }
         _ => {}
     }
@@ -278,6 +281,7 @@ fn match_loop(stmt: &Stmt) -> Option<Loop> {
             test: nested_test,
             elif_else_clauses: nested_elif_else_clauses,
             range: _,
+            node_index: _,
         }),
     ] = body.as_slice()
     else {
@@ -290,6 +294,7 @@ fn match_loop(stmt: &Stmt) -> Option<Loop> {
         Stmt::Return(ast::StmtReturn {
             value: Some(value),
             range: _,
+            node_index: _,
         }),
     ] = nested_body.as_slice()
     else {
@@ -327,6 +332,7 @@ fn match_else_return(stmt: &Stmt) -> Option<Terminal> {
         Stmt::Return(ast::StmtReturn {
             value: Some(next_value),
             range: _,
+            node_index: _,
         }),
     ] = orelse.as_slice()
     else {
@@ -370,6 +376,7 @@ fn match_sibling_return<'a>(stmt: &'a Stmt, sibling: &'a Stmt) -> Option<Termina
     let Stmt::Return(ast::StmtReturn {
         value: Some(next_value),
         range: _,
+        node_index: _,
     }) = &sibling
     else {
         return None;
@@ -397,14 +404,17 @@ fn return_stmt(id: Name, test: &Expr, target: &Expr, iter: &Expr, generator: Gen
             ifs: vec![],
             is_async: false,
             range: TextRange::default(),
+            node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
         }],
         range: TextRange::default(),
+        node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
         parenthesized: false,
     };
     let node1 = ast::ExprName {
         id,
         ctx: ExprContext::Load,
         range: TextRange::default(),
+        node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
     };
     let node2 = ast::ExprCall {
         func: Box::new(node1.into()),
@@ -412,12 +422,15 @@ fn return_stmt(id: Name, test: &Expr, target: &Expr, iter: &Expr, generator: Gen
             args: Box::from([node.into()]),
             keywords: Box::from([]),
             range: TextRange::default(),
+            node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
         },
         range: TextRange::default(),
+        node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
     };
     let node3 = ast::StmtReturn {
         value: Some(Box::new(node2.into())),
         range: TextRange::default(),
+        node_index: ruff_python_ast::AtomicNodeIndex::dummy(),
     };
     generator.stmt(&node3.into())
 }

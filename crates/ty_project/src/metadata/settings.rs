@@ -3,6 +3,8 @@ use std::sync::Arc;
 use ruff_db::diagnostic::DiagnosticFormat;
 use ty_python_semantic::lint::RuleSelection;
 
+use crate::glob::IncludeExcludeFilter;
+
 /// The resolved [`super::Options`] for the project.
 ///
 /// Unlike [`super::Options`], the struct has default values filled in and
@@ -18,28 +20,18 @@ use ty_python_semantic::lint::RuleSelection;
 /// Settings that are part of [`ty_python_semantic::ProgramSettings`] are not included here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Settings {
-    rules: Arc<RuleSelection>,
-
-    terminal: TerminalSettings,
-
-    respect_ignore_files: bool,
+    pub(super) rules: Arc<RuleSelection>,
+    pub(super) terminal: TerminalSettings,
+    pub(super) src: SrcSettings,
 }
 
 impl Settings {
-    pub fn new(rules: RuleSelection, respect_ignore_files: Option<bool>) -> Self {
-        Self {
-            rules: Arc::new(rules),
-            terminal: TerminalSettings::default(),
-            respect_ignore_files: respect_ignore_files.unwrap_or(true),
-        }
-    }
-
     pub fn rules(&self) -> &RuleSelection {
         &self.rules
     }
 
-    pub fn respect_ignore_files(&self) -> bool {
-        self.respect_ignore_files
+    pub fn src(&self) -> &SrcSettings {
+        &self.src
     }
 
     pub fn to_rules(&self) -> Arc<RuleSelection> {
@@ -49,14 +41,16 @@ impl Settings {
     pub fn terminal(&self) -> &TerminalSettings {
         &self.terminal
     }
-
-    pub fn set_terminal(&mut self, terminal: TerminalSettings) {
-        self.terminal = terminal;
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TerminalSettings {
     pub output_format: DiagnosticFormat,
     pub error_on_warning: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SrcSettings {
+    pub respect_ignore_files: bool,
+    pub files: IncludeExcludeFilter,
 }

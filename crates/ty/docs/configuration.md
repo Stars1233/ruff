@@ -1,25 +1,6 @@
 <!-- WARNING: This file is auto-generated (cargo dev generate-all). Update the doc comments on the 'Options' struct in 'crates/ty_project/src/metadata/options.rs' if you want to change anything here. -->
 
 # Configuration
-#### `respect-ignore-files`
-
-Whether to automatically exclude files that are ignored by `.ignore`,
-`.gitignore`, `.git/info/exclude`, and global `gitignore` files.
-Enabled by default.
-
-**Default value**: `true`
-
-**Type**: `bool`
-
-**Example usage** (`pyproject.toml`):
-
-```toml
-[tool.ty]
-respect-ignore-files = false
-```
-
----
-
 #### `rules`
 
 Configures the enabled rules and their severity.
@@ -95,6 +76,7 @@ python = "./.venv"
 Specifies the target platform that will be used to analyze the source code.
 If specified, ty will understand conditions based on comparisons with `sys.platform`, such
 as are commonly found in typeshed to reflect the differing contents of the standard library across platforms.
+If `all` is specified, ty will assume that the source code can run on any platform.
 
 If no platform is specified, ty will use the current platform:
 - `win32` for Windows
@@ -105,7 +87,7 @@ If no platform is specified, ty will use the current platform:
 
 **Default value**: `<current-platform>`
 
-**Type**: `"win32" | "darwin" | "android" | "ios" | "linux" | str`
+**Type**: `"win32" | "darwin" | "android" | "ios" | "linux" | "all" | str`
 
 **Example usage** (`pyproject.toml`):
 
@@ -124,9 +106,18 @@ The version should be specified as a string in the format `M.m` where `M` is the
 and `m` is the minor (e.g. `"3.0"` or `"3.6"`).
 If a version is provided, ty will generate errors if the source code makes use of language features
 that are not supported in that version.
-It will also understand conditionals based on comparisons with `sys.version_info`, such
-as are commonly found in typeshed to reflect the differing contents of the standard
-library across Python versions.
+
+If a version is not specified, ty will try the following techniques in order of preference
+to determine a value:
+1. Check for the `project.requires-python` setting in a `pyproject.toml` file
+   and use the minimum version from the specified range
+2. Check for an activated or configured Python environment
+   and attempt to infer the Python version of that environment
+3. Fall back to the default value (see below)
+
+For some language features, ty can also understand conditionals based on comparisons
+with `sys.version_info`. These are commonly found in typeshed, for example,
+to reflect the differing contents of the standard library across Python versions.
 
 **Default value**: `"3.13"`
 
@@ -162,6 +153,86 @@ typeshed = "/path/to/custom/typeshed"
 
 ## `src`
 
+#### `exclude`
+
+A list of file and directory patterns to exclude from type checking.
+
+Patterns follow a syntax similar to `.gitignore`:
+- `./src/` matches only a directory
+- `./src` matches both files and directories
+- `src` matches files or directories named `src` anywhere in the tree (e.g. `./src` or `./tests/src`)
+- `*` matches any (possibly empty) sequence of characters (except `/`).
+- `**` matches zero or more path components.
+  This sequence **must** form a single path component, so both `**a` and `b**` are invalid and will result in an error.
+  A sequence of more than two consecutive `*` characters is also invalid.
+- `?` matches any single character except `/`
+- `[abc]` matches any character inside the brackets. Character sequences can also specify ranges of characters, as ordered by Unicode,
+  so e.g. `[0-9]` specifies any character between `0` and `9` inclusive. An unclosed bracket is invalid.
+- `!pattern` negates a pattern (undoes the exclusion of files that would otherwise be excluded)
+
+By default, the following directories are excluded:
+
+- `.bzr`
+- `.direnv`
+- `.eggs`
+- `.git`
+- `.git-rewrite`
+- `.hg`
+- `.mypy_cache`
+- `.nox`
+- `.pants.d`
+- `.pytype`
+- `.ruff_cache`
+- `.svn`
+- `.tox`
+- `.venv`
+- `__pypackages__`
+- `_build`
+- `buck-out`
+- `dist`
+- `node_modules`
+- `venv`
+
+You can override any default exclude by using a negated pattern. For example,
+to re-include `dist` use `exclude = ["!dist"]`
+
+**Default value**: `null`
+
+**Type**: `list[str]`
+
+**Example usage** (`pyproject.toml`):
+
+```toml
+[tool.ty.src]
+exclude = [
+    "generated",
+    "*.proto",
+    "tests/fixtures/**",
+    "!tests/fixtures/important.py"  # Include this one file
+]
+```
+
+---
+
+#### `respect-ignore-files`
+
+Whether to automatically exclude files that are ignored by `.ignore`,
+`.gitignore`, `.git/info/exclude`, and global `gitignore` files.
+Enabled by default.
+
+**Default value**: `true`
+
+**Type**: `bool`
+
+**Example usage** (`pyproject.toml`):
+
+```toml
+[tool.ty.src]
+respect-ignore-files = false
+```
+
+---
+
 #### `root`
 
 The root of the project, used for finding first-party modules.
@@ -171,6 +242,9 @@ If left unspecified, ty will try to detect common project layouts and initialize
 * if a `./src` directory exists, include `.` and `./src` in the first party search path (src layout or flat)
 * if a `./<project-name>/<project-name>` directory exists, include `.` and `./<project-name>` in the first party search path
 * otherwise, default to `.` (flat layout)
+
+Besides, if a `./tests` directory exists and is not a package (i.e. it does not contain an `__init__.py` file),
+it will also be included in the first party search path.
 
 **Default value**: `null`
 
